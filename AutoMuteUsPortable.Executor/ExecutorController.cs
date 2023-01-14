@@ -1101,7 +1101,8 @@ port = {_executorConfiguration.environmentVariables["POSTGRESQL_PORT"]}				# (ch
         #endregion
     }
 
-    public override async Task Install(Dictionary<string, string> parameters, ISubject<ProgressInfo>? progress = null)
+    public override async Task Install(Dictionary<string, string> parameters,
+        Dictionary<ExecutorType, ExecutorControllerBase> executors, ISubject<ProgressInfo>? progress = null)
     {
         #region Retrieve data from PocketBase
 
@@ -1186,13 +1187,15 @@ port = {_executorConfiguration.environmentVariables["POSTGRESQL_PORT"]}				# (ch
         #endregion
     }
 
-    public override Task Update(Dictionary<string, string> parameters, ISubject<ProgressInfo>? progress = null)
+    public override Task Update(Dictionary<string, string> parameters,
+        Dictionary<ExecutorType, ExecutorControllerBase> executors, ISubject<ProgressInfo>? progress = null)
     {
         progress?.OnCompleted();
         return Task.CompletedTask;
     }
 
     public override async Task InstallBySimpleSettings(object simpleSettings, object executorConfigurationBase,
+        Dictionary<ExecutorType, ExecutorControllerBase> executors,
         ISubject<ProgressInfo>? progress = null)
     {
         #region Check variables
@@ -1211,10 +1214,11 @@ port = {_executorConfiguration.environmentVariables["POSTGRESQL_PORT"]}				# (ch
         await Install(new Dictionary<string, string>
         {
             { "username", username }, { "password", password }
-        }, progress);
+        }, executors, progress);
     }
 
     public override async Task UpdateBySimpleSettings(object simpleSettings, object executorConfigurationBase,
+        Dictionary<ExecutorType, ExecutorControllerBase> executors,
         ISubject<ProgressInfo>? progress = null)
     {
         #region Check variables
@@ -1233,7 +1237,7 @@ port = {_executorConfiguration.environmentVariables["POSTGRESQL_PORT"]}				# (ch
         await Update(new Dictionary<string, string>
         {
             { "username", username }, { "password", password }
-        }, progress);
+        }, executors, progress);
     }
 
     private Task ExtractZip(string path, IProgress<double>? progress = null)
