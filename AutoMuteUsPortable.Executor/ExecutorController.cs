@@ -1013,8 +1013,6 @@ port = {_executorConfiguration.environmentVariables["POSTGRESQL_PORT"]}				# (ch
                 FileName = Path.Combine(_executorConfiguration.binaryDirectory, @"bin\pg_ctl.exe"),
                 Arguments = $"start -w -D \"{dataDirectory.Replace(@"\", @"\\")}\"",
                 UseShellExecute = false,
-                RedirectStandardOutput = false,
-                RedirectStandardError = false,
                 CreateNoWindow = true,
                 WorkingDirectory = _executorConfiguration.binaryDirectory
             }
@@ -1047,8 +1045,6 @@ port = {_executorConfiguration.environmentVariables["POSTGRESQL_PORT"]}				# (ch
                 Arguments =
                     $"stop -D \"{Path.Combine(_executorConfiguration.binaryDirectory, @"data\").Replace(@"\", @"\\")}\" -m smart",
                 UseShellExecute = false,
-                RedirectStandardOutput = false,
-                RedirectStandardError = false,
                 CreateNoWindow = true,
                 WorkingDirectory = _executorConfiguration.binaryDirectory
             }
@@ -1061,6 +1057,7 @@ port = {_executorConfiguration.environmentVariables["POSTGRESQL_PORT"]}				# (ch
         process.Start();
         process.WaitForExit();
         IsRunning = false;
+        OnStop();
         progress?.OnCompleted();
         return Task.CompletedTask;
 
@@ -1081,8 +1078,6 @@ port = {_executorConfiguration.environmentVariables["POSTGRESQL_PORT"]}				# (ch
                 Arguments =
                     $"restart -w -D \"{Path.Combine(_executorConfiguration.binaryDirectory, @"data\").Replace(@"\", @"\\")} -m smart",
                 UseShellExecute = false,
-                RedirectStandardOutput = false,
-                RedirectStandardError = false,
                 CreateNoWindow = true,
                 WorkingDirectory = _executorConfiguration.binaryDirectory
             }
@@ -1174,8 +1169,6 @@ port = {_executorConfiguration.environmentVariables["POSTGRESQL_PORT"]}				# (ch
                 Arguments =
                     $"--auth=password --pwfile=\"{passwordFile}\" --username={parameters["username"]} \"{Path.Combine(_executorConfiguration.binaryDirectory, @"data\").Replace(@"\", @"\\")}\"",
                 UseShellExecute = false,
-                RedirectStandardOutput = false,
-                RedirectStandardError = false,
                 CreateNoWindow = true,
                 WorkingDirectory = _executorConfiguration.binaryDirectory
             }
