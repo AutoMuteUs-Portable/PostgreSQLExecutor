@@ -20,36 +20,20 @@ public class ExecutorController : ExecutorControllerBase
         {
             "username", new Parameter
             {
-                name = "username",
+                name = "Username",
                 description = "Username to use for initialize database"
             }
         },
         {
             "password", new Parameter
             {
-                name = "password",
+                name = "Password",
                 description = "Password to use for initialize database"
             }
         }
     };
 
     public new static Dictionary<string, Parameter> UpdateParameters = new()
-    {
-        {
-            "username", new Parameter
-            {
-                name = "username",
-                description = "Username to use for accessing database"
-            }
-        },
-        {
-            "password", new Parameter
-            {
-                name = "password",
-                description = "Password to use for accessing database"
-            }
-        }
-    };
 
     private readonly ExecutorConfiguration _executorConfiguration;
     private readonly PocketBaseClientApplication _pocketBaseClientApplication = new();
@@ -1214,23 +1198,7 @@ port = {_executorConfiguration.environmentVariables["POSTGRESQL_PORT"]}				# (ch
         Dictionary<ExecutorType, ExecutorControllerBase> executors,
         ISubject<ProgressInfo>? progress = null)
     {
-        #region Check variables
-
-        var postgresqlConfiguration = Utils.PropertyByName<object>(simpleSettings, "postgresql");
-        if (postgresqlConfiguration == null) throw new InvalidDataException("postgresqlConfiguration cannot be null");
-
-        var username = Utils.PropertyByName<string>(postgresqlConfiguration, "username");
-        if (string.IsNullOrEmpty(username)) throw new InvalidDataException("username cannot be null or empty");
-
-        var password = Utils.PropertyByName<string>(postgresqlConfiguration, "password");
-        if (string.IsNullOrEmpty(password)) throw new InvalidDataException("password cannot be null or empty");
-
-        #endregion
-
-        await Update(new Dictionary<string, string>
-        {
-            { "username", username }, { "password", password }
-        }, executors, progress);
+        await Update(new Dictionary<string, string>(), executors, progress);
     }
 
     private Task ExtractZip(string path, IProgress<double>? progress = null)
