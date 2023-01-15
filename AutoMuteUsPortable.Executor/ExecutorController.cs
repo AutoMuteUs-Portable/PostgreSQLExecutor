@@ -15,26 +15,6 @@ namespace AutoMuteUsPortable.Executor;
 
 public class ExecutorController : ExecutorControllerBase
 {
-    public new static Dictionary<string, Parameter> InstallParameters = new()
-    {
-        {
-            "username", new Parameter
-            {
-                name = "Username",
-                description = "Username to use for initialize database"
-            }
-        },
-        {
-            "password", new Parameter
-            {
-                name = "Password",
-                description = "Password to use for initialize database"
-            }
-        }
-    };
-
-    public new static Dictionary<string, Parameter> UpdateParameters = new();
-
     private readonly PocketBaseClientApplication _pocketBaseClientApplication = new();
     public new readonly ExecutorConfiguration ExecutorConfiguration;
 
@@ -106,6 +86,18 @@ public class ExecutorController : ExecutorControllerBase
         int? postgresqlPort = Utils.PropertyByName<int>(port!, "postgresql");
         if (postgresqlPort == null) throw new InvalidDataException("postgresqlPort cannot be null");
 
+        var postgresqlConfiguration = Utils.PropertyByName<object>(computedSimpleSettings, "postgresql");
+        if (postgresqlConfiguration == null)
+            throw new InvalidDataException("postgresqlConfiguration cannot be null");
+
+        var postgresqlUsername = Utils.PropertyByName<string>(postgresqlConfiguration, "username");
+        if (string.IsNullOrEmpty(postgresqlUsername))
+            throw new InvalidDataException("postgresqlUsername cannot be null or empty");
+
+        var postgresqlPassword = Utils.PropertyByName<string>(postgresqlConfiguration, "password");
+        if (string.IsNullOrEmpty(postgresqlPassword))
+            throw new InvalidDataException("postgresqlPassword cannot be null or empty");
+
         #endregion
 
         #region Create ExecutorConfiguration and validate
@@ -118,7 +110,9 @@ public class ExecutorController : ExecutorControllerBase
             binaryDirectory = binaryDirectory,
             environmentVariables = new Dictionary<string, string>
             {
-                { "POSTGRESQL_PORT", postgresqlPort.ToString() ?? "" }
+                { "POSTGRESQL_PORT", postgresqlPort.ToString() ?? "" },
+                { "POSTGRESQL_USERNAME", postgresqlUsername },
+                { "POSTGRESQL_PASSWORD", postgresqlPassword }
             }
         };
 
@@ -1080,7 +1074,7 @@ port = {ExecutorConfiguration.environmentVariables["POSTGRESQL_PORT"]}				# (cha
         #endregion
     }
 
-    public override async Task Install(Dictionary<string, string> parameters,
+    public override async Task Install(
         Dictionary<ExecutorType, ExecutorControllerBase> executors, ISubject<ProgressInfo>? progress = null)
     {
         #region Retrieve data from PocketBase
@@ -1139,7 +1133,7 @@ port = {ExecutorConfiguration.environmentVariables["POSTGRESQL_PORT"]}				# (cha
         #region Initialize database
 
         var passwordFile = Path.GetTempFileName();
-        await File.WriteAllTextAsync(passwordFile, parameters["password"]);
+        await File.WriteAllTextAsync(passwordFile, ExecutorConfiguration.environmentVariables["POSTGRESQL_PASSWORD"]);
 
         progress?.OnNext(new ProgressInfo
         {
@@ -1151,7 +1145,7 @@ port = {ExecutorConfiguration.environmentVariables["POSTGRESQL_PORT"]}				# (cha
             {
                 FileName = Path.Combine(ExecutorConfiguration.binaryDirectory, @"bin\initdb.exe"),
                 Arguments =
-                    $"--auth=password --pwfile=\"{passwordFile}\" --username={parameters["username"]} \"{Path.Combine(ExecutorConfiguration.binaryDirectory, @"data\").Replace(@"\", @"\\")}\"",
+                    $"--auth=password --pwfile=\"{passwordFile}\" --username={ExecutorConfiguration.environmentVariables["POSTGRESQL_USERNAME"]} \"{Path.Combine(ExecutorConfiguration.binaryDirectory, @"data\").Replace(@"\", @"\\")}\"",
                 UseShellExecute = false,
                 CreateNoWindow = true,
                 WorkingDirectory = ExecutorConfiguration.binaryDirectory
@@ -1164,41 +1158,11 @@ port = {ExecutorConfiguration.environmentVariables["POSTGRESQL_PORT"]}				# (cha
         #endregion
     }
 
-    public override Task Update(Dictionary<string, string> parameters,
+    public override Task Update(
         Dictionary<ExecutorType, ExecutorControllerBase> executors, ISubject<ProgressInfo>? progress = null)
     {
         progress?.OnCompleted();
         return Task.CompletedTask;
-    }
-
-    public override async Task InstallBySimpleSettings(object simpleSettings, object executorConfigurationBase,
-        Dictionary<ExecutorType, ExecutorControllerBase> executors,
-        ISubject<ProgressInfo>? progress = null)
-    {
-        #region Check variables
-
-        var postgresqlConfiguration = Utils.PropertyByName<object>(simpleSettings, "postgresql");
-        if (postgresqlConfiguration == null) throw new InvalidDataException("postgresqlConfiguration cannot be null");
-
-        var username = Utils.PropertyByName<string>(postgresqlConfiguration, "username");
-        if (string.IsNullOrEmpty(username)) throw new InvalidDataException("username cannot be null or empty");
-
-        var password = Utils.PropertyByName<string>(postgresqlConfiguration, "password");
-        if (string.IsNullOrEmpty(password)) throw new InvalidDataException("password cannot be null or empty");
-
-        #endregion
-
-        await Install(new Dictionary<string, string>
-        {
-            { "username", username }, { "password", password }
-        }, executors, progress);
-    }
-
-    public override async Task UpdateBySimpleSettings(object simpleSettings, object executorConfigurationBase,
-        Dictionary<ExecutorType, ExecutorControllerBase> executors,
-        ISubject<ProgressInfo>? progress = null)
-    {
-        await Update(new Dictionary<string, string>(), executors, progress);
     }
 
     private Task ExtractZip(string path, IProgress<double>? progress = null)
