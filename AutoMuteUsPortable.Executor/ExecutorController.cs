@@ -2,7 +2,9 @@
 using System.IO.Compression;
 using System.Management;
 using System.Reactive.Subjects;
+using System.Runtime.InteropServices;
 using AutoMuteUsPortable.PocketBaseClient;
+using AutoMuteUsPortable.PocketBaseClient.Models;
 using AutoMuteUsPortable.Shared.Controller.Executor;
 using AutoMuteUsPortable.Shared.Entity.ExecutorConfigurationBaseNS;
 using AutoMuteUsPortable.Shared.Entity.ExecutorConfigurationNS;
@@ -1088,7 +1090,8 @@ port = {ExecutorConfiguration.environmentVariables["POSTGRESQL_PORT"]}				# (cha
         // if (postgresql.CompatibleExecutors.All(x => x.Version != _executorConfiguration.version))
         //     throw new InvalidDataException(
         //         $"{_executorConfiguration.type.ToString()} {_executorConfiguration.binaryVersion} is not compatible with Executor {_executorConfiguration.version}");
-        if (string.IsNullOrEmpty(postgresql.DownloadUrl))
+        var downloadUrl = GetDownloadUrl(postgresql.DownloadUrl);
+        if (string.IsNullOrEmpty(downloadUrl))
             throw new InvalidDataException("DownloadUrl cannot be null or empty");
 
         #endregion
@@ -1099,7 +1102,7 @@ port = {ExecutorConfiguration.environmentVariables["POSTGRESQL_PORT"]}				# (cha
             Directory.CreateDirectory(ExecutorConfiguration.binaryDirectory);
 
         var binaryPath = Path.Combine(ExecutorConfiguration.binaryDirectory,
-            Path.GetFileName(postgresql.DownloadUrl));
+            Path.GetFileName(downloadUrl));
 
         var downloadProgress = new Progress<double>();
         downloadProgress.ProgressChanged += (_, value) =>
@@ -1110,7 +1113,7 @@ port = {ExecutorConfiguration.environmentVariables["POSTGRESQL_PORT"]}				# (cha
                 progress = value / 2.0
             });
         };
-        await Download(postgresql.DownloadUrl, binaryPath, downloadProgress);
+        await Download(downloadUrl, binaryPath, downloadProgress);
 
         #endregion
 
@@ -1121,7 +1124,7 @@ port = {ExecutorConfiguration.environmentVariables["POSTGRESQL_PORT"]}				# (cha
         {
             progress?.OnNext(new ProgressInfo
             {
-                name = $"Extracting {Path.GetFileName(postgresql.DownloadUrl)}",
+                name = $"Extracting {Path.GetFileName(downloadUrl)}",
                 progress = 0.5 + value / 2.0
             });
         };
@@ -1182,6 +1185,25 @@ port = {ExecutorConfiguration.environmentVariables["POSTGRESQL_PORT"]}				# (cha
         using (var fileStream = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.None))
         {
             await client.DownloadDataAsync(url, fileStream, progress);
+        }
+    }
+
+    private string? GetDownloadUrl(DownloadUrl? downloadUrl)
+    {
+        var arch = RuntimeInformation.ProcessArchitecture;
+
+        switch (arch)
+        {
+            case Architecture.Arm:
+                return downloadUrl?.WinArm;
+            case Architecture.Arm64:
+                return downloadUrl?.WinArm64;
+            case Architecture.X86:
+                return downloadUrl?.WinX86;
+            case Architecture.X64:
+                return downloadUrl?.WinX64;
+            default:
+                throw new InvalidDataException($"{arch.ToString()} is not supported");
         }
     }
 }
