@@ -33,10 +33,10 @@ public class ExecutorController : ExecutorControllerBase
         }
     };
 
-    public new static Dictionary<string, Parameter> UpdateParameters = new()
+    public new static Dictionary<string, Parameter> UpdateParameters = new();
 
-    private readonly ExecutorConfiguration _executorConfiguration;
     private readonly PocketBaseClientApplication _pocketBaseClientApplication = new();
+    public new readonly ExecutorConfiguration ExecutorConfiguration;
 
     public ExecutorController(object executorConfiguration) : base(executorConfiguration)
     {
@@ -76,7 +76,7 @@ public class ExecutorController : ExecutorControllerBase
         var validator = new ExecutorConfigurationValidator();
         validator.ValidateAndThrow(tmp);
 
-        _executorConfiguration = tmp;
+        ExecutorConfiguration = tmp;
 
         #endregion
     }
@@ -125,7 +125,7 @@ public class ExecutorController : ExecutorControllerBase
         var validator = new ExecutorConfigurationValidator();
         validator.ValidateAndThrow(executorConfiguration);
 
-        _executorConfiguration = executorConfiguration;
+        ExecutorConfiguration = executorConfiguration;
 
         #endregion
     }
@@ -138,10 +138,10 @@ public class ExecutorController : ExecutorControllerBase
 
         var postgresql =
             _pocketBaseClientApplication.Data.PostgresqlCollection.FirstOrDefault(x =>
-                x.Version == _executorConfiguration.binaryVersion);
+                x.Version == ExecutorConfiguration.binaryVersion);
         if (postgresql == null)
             throw new InvalidDataException(
-                $"{_executorConfiguration.type.ToString()} {_executorConfiguration.binaryVersion} is not found in the database");
+                $"{ExecutorConfiguration.type.ToString()} {ExecutorConfiguration.binaryVersion} is not found in the database");
         // TODO: This doesn't work due to a bug of PocketBaseClient-csharp
         // if (postgresql.CompatibleExecutors.All(x => x.Version != _executorConfiguration.version))
         //     throw new InvalidDataException(
@@ -198,11 +198,11 @@ public class ExecutorController : ExecutorControllerBase
 
         #region Search for currently running process and kill it
 
-        var fileName = Path.Combine(_executorConfiguration.binaryDirectory, @"bin\postgres.exe");
+        var fileName = Path.Combine(ExecutorConfiguration.binaryDirectory, @"bin\postgres.exe");
 
         progress?.OnNext(new ProgressInfo
         {
-            name = $"Checking currently running {_executorConfiguration.type.ToString()}"
+            name = $"Checking currently running {ExecutorConfiguration.type.ToString()}"
         });
         var wmiQueryString =
             $"SELECT ProcessId FROM Win32_Process WHERE ExecutablePath = '{fileName.Replace(@"\", @"\\")}'";
@@ -227,7 +227,7 @@ public class ExecutorController : ExecutorControllerBase
 
         #region Generate config
 
-        var dataDirectory = Path.Combine(_executorConfiguration.binaryDirectory, @"data\");
+        var dataDirectory = Path.Combine(ExecutorConfiguration.binaryDirectory, @"data\");
         var postgresqlConfPath = Path.Combine(dataDirectory, "postgresql.conf");
         var postgresqlConf = $@"
 # -----------------------------
@@ -293,7 +293,7 @@ public class ExecutorController : ExecutorControllerBase
 					# comma-separated list of addresses;
 					# defaults to 'localhost'; use '*' for all
 					# (change requires restart)
-port = {_executorConfiguration.environmentVariables["POSTGRESQL_PORT"]}				# (change requires restart)
+port = {ExecutorConfiguration.environmentVariables["POSTGRESQL_PORT"]}				# (change requires restart)
 #max_connections = 100			# (change requires restart)
 #superuser_reserved_connections = 3	# (change requires restart)
 #unix_socket_directories = '/tmp'	# comma-separated list of directories
@@ -994,18 +994,18 @@ port = {_executorConfiguration.environmentVariables["POSTGRESQL_PORT"]}				# (ch
         {
             StartInfo = new ProcessStartInfo
             {
-                FileName = Path.Combine(_executorConfiguration.binaryDirectory, @"bin\pg_ctl.exe"),
+                FileName = Path.Combine(ExecutorConfiguration.binaryDirectory, @"bin\pg_ctl.exe"),
                 Arguments = $"start -w -D \"{dataDirectory.Replace(@"\", @"\\")}\"",
                 UseShellExecute = false,
                 CreateNoWindow = true,
-                WorkingDirectory = _executorConfiguration.binaryDirectory
+                WorkingDirectory = ExecutorConfiguration.binaryDirectory
             }
         };
 
         progress?.OnNext(new ProgressInfo
         {
             name =
-                $"Starting {_executorConfiguration.type.ToString()} at port {_executorConfiguration.environmentVariables["POSTGRESQL_PORT"]}"
+                $"Starting {ExecutorConfiguration.type.ToString()} at port {ExecutorConfiguration.environmentVariables["POSTGRESQL_PORT"]}"
         });
         IsRunning = true;
         startProcess.Start();
@@ -1025,18 +1025,18 @@ port = {_executorConfiguration.environmentVariables["POSTGRESQL_PORT"]}				# (ch
         {
             StartInfo = new ProcessStartInfo
             {
-                FileName = Path.Combine(_executorConfiguration.binaryDirectory, @"bin\pg_ctl.exe"),
+                FileName = Path.Combine(ExecutorConfiguration.binaryDirectory, @"bin\pg_ctl.exe"),
                 Arguments =
-                    $"stop -D \"{Path.Combine(_executorConfiguration.binaryDirectory, @"data\").Replace(@"\", @"\\")}\" -m smart",
+                    $"stop -D \"{Path.Combine(ExecutorConfiguration.binaryDirectory, @"data\").Replace(@"\", @"\\")}\" -m smart",
                 UseShellExecute = false,
                 CreateNoWindow = true,
-                WorkingDirectory = _executorConfiguration.binaryDirectory
+                WorkingDirectory = ExecutorConfiguration.binaryDirectory
             }
         };
 
         progress?.OnNext(new ProgressInfo
         {
-            name = $"Stopping {_executorConfiguration.type.ToString()}"
+            name = $"Stopping {ExecutorConfiguration.type.ToString()}"
         });
         process.Start();
         process.WaitForExit();
@@ -1058,18 +1058,18 @@ port = {_executorConfiguration.environmentVariables["POSTGRESQL_PORT"]}				# (ch
         {
             StartInfo = new ProcessStartInfo
             {
-                FileName = Path.Combine(_executorConfiguration.binaryDirectory, @"bin\pg_ctl.exe"),
+                FileName = Path.Combine(ExecutorConfiguration.binaryDirectory, @"bin\pg_ctl.exe"),
                 Arguments =
-                    $"restart -w -D \"{Path.Combine(_executorConfiguration.binaryDirectory, @"data\").Replace(@"\", @"\\")} -m smart",
+                    $"restart -w -D \"{Path.Combine(ExecutorConfiguration.binaryDirectory, @"data\").Replace(@"\", @"\\")} -m smart",
                 UseShellExecute = false,
                 CreateNoWindow = true,
-                WorkingDirectory = _executorConfiguration.binaryDirectory
+                WorkingDirectory = ExecutorConfiguration.binaryDirectory
             }
         };
 
         progress?.OnNext(new ProgressInfo
         {
-            name = $"Restarting {_executorConfiguration.type.ToString()}"
+            name = $"Restarting {ExecutorConfiguration.type.ToString()}"
         });
         process.Start();
         process.WaitForExit();
@@ -1087,10 +1087,10 @@ port = {_executorConfiguration.environmentVariables["POSTGRESQL_PORT"]}				# (ch
 
         var postgresql =
             _pocketBaseClientApplication.Data.PostgresqlCollection.FirstOrDefault(x =>
-                x.Version == _executorConfiguration.binaryVersion);
+                x.Version == ExecutorConfiguration.binaryVersion);
         if (postgresql == null)
             throw new InvalidDataException(
-                $"{_executorConfiguration.type.ToString()} {_executorConfiguration.binaryVersion} is not found in the database");
+                $"{ExecutorConfiguration.type.ToString()} {ExecutorConfiguration.binaryVersion} is not found in the database");
         // TODO: This doesn't work due to a bug of PocketBaseClient-csharp
         // if (postgresql.CompatibleExecutors.All(x => x.Version != _executorConfiguration.version))
         //     throw new InvalidDataException(
@@ -1102,10 +1102,10 @@ port = {_executorConfiguration.environmentVariables["POSTGRESQL_PORT"]}				# (ch
 
         #region Download
 
-        if (!Directory.Exists(_executorConfiguration.binaryDirectory))
-            Directory.CreateDirectory(_executorConfiguration.binaryDirectory);
+        if (!Directory.Exists(ExecutorConfiguration.binaryDirectory))
+            Directory.CreateDirectory(ExecutorConfiguration.binaryDirectory);
 
-        var binaryPath = Path.Combine(_executorConfiguration.binaryDirectory,
+        var binaryPath = Path.Combine(ExecutorConfiguration.binaryDirectory,
             Path.GetFileName(postgresql.DownloadUrl));
 
         var downloadProgress = new Progress<double>();
@@ -1113,7 +1113,7 @@ port = {_executorConfiguration.environmentVariables["POSTGRESQL_PORT"]}				# (ch
         {
             progress?.OnNext(new ProgressInfo
             {
-                name = $"Downloading {_executorConfiguration.type.ToString()} {postgresql.Version}",
+                name = $"Downloading {ExecutorConfiguration.type.ToString()} {postgresql.Version}",
                 progress = value / 2.0
             });
         };
@@ -1149,12 +1149,12 @@ port = {_executorConfiguration.environmentVariables["POSTGRESQL_PORT"]}				# (ch
         {
             StartInfo = new ProcessStartInfo
             {
-                FileName = Path.Combine(_executorConfiguration.binaryDirectory, @"bin\initdb.exe"),
+                FileName = Path.Combine(ExecutorConfiguration.binaryDirectory, @"bin\initdb.exe"),
                 Arguments =
-                    $"--auth=password --pwfile=\"{passwordFile}\" --username={parameters["username"]} \"{Path.Combine(_executorConfiguration.binaryDirectory, @"data\").Replace(@"\", @"\\")}\"",
+                    $"--auth=password --pwfile=\"{passwordFile}\" --username={parameters["username"]} \"{Path.Combine(ExecutorConfiguration.binaryDirectory, @"data\").Replace(@"\", @"\\")}\"",
                 UseShellExecute = false,
                 CreateNoWindow = true,
-                WorkingDirectory = _executorConfiguration.binaryDirectory
+                WorkingDirectory = ExecutorConfiguration.binaryDirectory
             }
         };
         process.Start();
