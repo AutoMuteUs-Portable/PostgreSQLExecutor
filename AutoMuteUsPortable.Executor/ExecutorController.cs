@@ -125,6 +125,32 @@ public class ExecutorController : ExecutorControllerBase
     {
         if (IsRunning) return;
 
+        #region Setup progress
+
+        var taskProgress = progress != null
+            ? new TaskProgress(progress, new Dictionary<string, object?>
+            {
+                {
+                    "File integrity check", new List<string>
+                    {
+                        "Checking file integrity",
+                        "Downloading",
+                        "Extracting"
+                    }
+                },
+                {
+                    "Killing currently running server",
+                    null
+                },
+                {
+                    "Starting server",
+                    null
+                }
+            })
+            : null;
+
+        #endregion
+
         #region Retrieve data from PocketBase
 
         var postgresql =
@@ -132,26 +158,28 @@ public class ExecutorController : ExecutorControllerBase
                 x.Version == ExecutorConfiguration.binaryVersion);
         if (postgresql == null)
             throw new InvalidDataException(
-                $"{ExecutorConfiguration.type.ToString()} {ExecutorConfiguration.binaryVersion} is not found in the database");
-        // TODO: This doesn't work due to a bug of PocketBaseClient-csharp
-        // if (postgresql.CompatibleExecutors.All(x => x.Version != _executorConfiguration.version))
-        //     throw new InvalidDataException(
-        //         $"{_executorConfiguration.type.ToString()} {_executorConfiguration.binaryVersion} is not compatible with Executor {_executorConfiguration.version}");
+                $"{ExecutorConfiguration.type} {ExecutorConfiguration.binaryVersion} is not found in the database");
+        if (postgresql.CompatibleExecutors.All(x => x.Version != ExecutorConfiguration.version))
+            throw new InvalidDataException(
+                $"{ExecutorConfiguration.type} {ExecutorConfiguration.binaryVersion} is not compatible with Executor {ExecutorConfiguration.version}");
 
         #endregion
 
         #region Check file integrity
 
-        progress?.OnNext(new ProgressInfo
-        {
-            name = $"Checking file integrity of {ExecutorConfiguration.type.ToString()}"
-        });
         using (var client = new HttpClient())
         {
             var checksumUrl = Utils.GetChecksum(postgresql.Checksum);
             var res = await client.GetStringAsync(checksumUrl);
             var checksum = Utils.ParseChecksumText(res);
+            var checksumProgress = taskProgress?.GetSubjectProgress();
+            checksumProgress?.OnNext(new ProgressInfo
+            {
+                name = string.Format("{0}のファイルの整合性を確認しています", ExecutorConfiguration.type),
+                IsIndeterminate = true
+            });
             var invalidFiles = Utils.CompareChecksum(ExecutorConfiguration.binaryDirectory, checksum);
+            taskProgress?.NextTask();
 
             if (0 < invalidFiles.Count)
             {
@@ -162,27 +190,21 @@ public class ExecutorController : ExecutorControllerBase
                 var binaryPath = Path.Combine(ExecutorConfiguration.binaryDirectory,
                     Path.GetFileName(downloadUrl));
 
-                var downloadProgress = new Progress<double>();
-                downloadProgress.ProgressChanged += (_, value) =>
-                {
-                    progress?.OnNext(new ProgressInfo
-                    {
-                        name = $"Downloading {ExecutorConfiguration.type.ToString()} {postgresql.Version}",
-                        progress = value / 2.0
-                    });
-                };
+                var downloadProgress = taskProgress?.GetProgress();
+                if (taskProgress?.ActiveLeafTask != null)
+                    taskProgress.ActiveLeafTask.Name = string.Format("{0}をダウンロードしています", Path.GetFileName(downloadUrl));
                 await Utils.DownloadAsync(downloadUrl, binaryPath, downloadProgress);
+                taskProgress?.NextTask();
 
-                var extractProgress = new Progress<double>();
-                extractProgress.ProgressChanged += (_, value) =>
-                {
-                    progress?.OnNext(new ProgressInfo
-                    {
-                        name = $"Extracting {Path.GetFileName(downloadUrl)}",
-                        progress = 0.5 + value / 2.0
-                    });
-                };
+                var extractProgress = taskProgress?.GetProgress();
+                if (taskProgress?.ActiveLeafTask != null)
+                    taskProgress.ActiveLeafTask.Name = string.Format("{0}を解凍しています", Path.GetFileName(downloadUrl));
                 Utils.ExtractZip(binaryPath, extractProgress);
+                taskProgress?.NextTask();
+            }
+            else
+            {
+                taskProgress?.NextTask(2);
             }
         }
 
@@ -192,9 +214,11 @@ public class ExecutorController : ExecutorControllerBase
 
         var fileName = Path.Combine(ExecutorConfiguration.binaryDirectory, @"bin\postgres.exe");
 
-        progress?.OnNext(new ProgressInfo
+        var killingProgress = taskProgress?.GetSubjectProgress();
+        killingProgress?.OnNext(new ProgressInfo
         {
-            name = $"Checking currently running {ExecutorConfiguration.type.ToString()}"
+            name = string.Format("既に起動している{0}を終了しています", ExecutorConfiguration.type),
+            IsIndeterminate = true
         });
         var wmiQueryString =
             $"SELECT ProcessId FROM Win32_Process WHERE ExecutablePath = '{fileName.Replace(@"\", @"\\")}'";
@@ -214,6 +238,8 @@ public class ExecutorController : ExecutorControllerBase
                 {
                 }
         }
+
+        taskProgress?.NextTask();
 
         #endregion
 
@@ -994,15 +1020,16 @@ port = {ExecutorConfiguration.environmentVariables["POSTGRESQL_PORT"]}				# (cha
             }
         };
 
-        progress?.OnNext(new ProgressInfo
+        var startProgress = taskProgress?.GetSubjectProgress();
+        startProgress?.OnNext(new ProgressInfo
         {
-            name =
-                $"Starting {ExecutorConfiguration.type.ToString()} at port {ExecutorConfiguration.environmentVariables["POSTGRESQL_PORT"]}"
+            name = string.Format("{0}を起動しています", ExecutorConfiguration.type),
+            IsIndeterminate = true
         });
         IsRunning = true;
         startProcess.Start();
         await startProcess.WaitForExitAsync();
-        progress?.OnCompleted();
+        taskProgress?.NextTask();
 
         #endregion
     }
@@ -1028,13 +1055,13 @@ port = {ExecutorConfiguration.environmentVariables["POSTGRESQL_PORT"]}				# (cha
 
         progress?.OnNext(new ProgressInfo
         {
-            name = $"Stopping {ExecutorConfiguration.type.ToString()}"
+            name = string.Format("{0}を終了しています", ExecutorConfiguration.type),
+            IsIndeterminate = true
         });
         process.Start();
         process.WaitForExit();
         IsRunning = false;
         OnStop();
-        progress?.OnCompleted();
         return Task.CompletedTask;
 
         #endregion
@@ -1061,12 +1088,11 @@ port = {ExecutorConfiguration.environmentVariables["POSTGRESQL_PORT"]}				# (cha
 
         progress?.OnNext(new ProgressInfo
         {
-            name = $"Restarting {ExecutorConfiguration.type.ToString()}"
+            name = string.Format("{0}を再起動しています", ExecutorConfiguration.type),
+            IsIndeterminate = true
         });
         process.Start();
         process.WaitForExit();
-        IsRunning = false;
-        progress?.OnCompleted();
         return Task.CompletedTask;
 
         #endregion
@@ -1075,6 +1101,19 @@ port = {ExecutorConfiguration.environmentVariables["POSTGRESQL_PORT"]}				# (cha
     public override async Task Install(
         Dictionary<ExecutorType, ExecutorControllerBase> executors, ISubject<ProgressInfo>? progress = null)
     {
+        #region Setup progress
+
+        var taskProgress = progress != null
+            ? new TaskProgress(progress, new List<string>
+            {
+                "Downloading",
+                "Extracting",
+                "Initializing"
+            })
+            : null;
+
+        #endregion
+
         #region Retrieve data from PocketBase
 
         var postgresql =
@@ -1082,10 +1121,10 @@ port = {ExecutorConfiguration.environmentVariables["POSTGRESQL_PORT"]}				# (cha
                 x.Version == ExecutorConfiguration.binaryVersion);
         if (postgresql == null)
             throw new InvalidDataException(
-                $"{ExecutorConfiguration.type.ToString()} {ExecutorConfiguration.binaryVersion} is not found in the database");
+                $"{ExecutorConfiguration.type} {ExecutorConfiguration.binaryVersion} is not found in the database");
         if (postgresql.CompatibleExecutors.All(x => x.Version != ExecutorConfiguration.version))
             throw new InvalidDataException(
-                $"{ExecutorConfiguration.type.ToString()} {ExecutorConfiguration.binaryVersion} is not compatible with Executor {ExecutorConfiguration.version}");
+                $"{ExecutorConfiguration.type} {ExecutorConfiguration.binaryVersion} is not compatible with Executor {ExecutorConfiguration.version}");
         var downloadUrl = Utils.GetDownloadUrl(postgresql.DownloadUrl);
         if (string.IsNullOrEmpty(downloadUrl))
             throw new InvalidDataException("DownloadUrl cannot be null or empty");
@@ -1100,31 +1139,21 @@ port = {ExecutorConfiguration.environmentVariables["POSTGRESQL_PORT"]}				# (cha
         var binaryPath = Path.Combine(ExecutorConfiguration.binaryDirectory,
             Path.GetFileName(downloadUrl));
 
-        var downloadProgress = new Progress<double>();
-        downloadProgress.ProgressChanged += (_, value) =>
-        {
-            progress?.OnNext(new ProgressInfo
-            {
-                name = $"Downloading {ExecutorConfiguration.type.ToString()} {postgresql.Version}",
-                progress = value / 2.0
-            });
-        };
+        var downloadProgress = taskProgress?.GetProgress();
+        if (taskProgress?.ActiveLeafTask != null)
+            taskProgress.ActiveLeafTask.Name = string.Format("{0}をダウンロードしています", Path.GetFileName(downloadUrl));
         await Utils.DownloadAsync(downloadUrl, binaryPath, downloadProgress);
+        taskProgress?.NextTask();
 
         #endregion
 
         #region Extract
 
-        var extractProgress = new Progress<double>();
-        extractProgress.ProgressChanged += (_, value) =>
-        {
-            progress?.OnNext(new ProgressInfo
-            {
-                name = $"Extracting {Path.GetFileName(downloadUrl)}",
-                progress = 0.5 + value / 2.0
-            });
-        };
+        var extractProgress = taskProgress?.GetProgress();
+        if (taskProgress?.ActiveLeafTask != null)
+            taskProgress.ActiveLeafTask.Name = string.Format("{0}を解凍しています", Path.GetFileName(downloadUrl));
         Utils.ExtractZip(binaryPath, extractProgress);
+        taskProgress?.NextTask();
 
         #endregion
 
@@ -1133,9 +1162,11 @@ port = {ExecutorConfiguration.environmentVariables["POSTGRESQL_PORT"]}				# (cha
         var passwordFile = Path.GetTempFileName();
         await File.WriteAllTextAsync(passwordFile, ExecutorConfiguration.environmentVariables["POSTGRESQL_PASSWORD"]);
 
-        progress?.OnNext(new ProgressInfo
+        var initializeProgress = taskProgress?.GetSubjectProgress();
+        initializeProgress?.OnNext(new ProgressInfo
         {
-            name = "Initialize database"
+            name = "データベースを初期化しています",
+            IsIndeterminate = true
         });
         var process = new Process
         {
@@ -1151,7 +1182,7 @@ port = {ExecutorConfiguration.environmentVariables["POSTGRESQL_PORT"]}				# (cha
         };
         process.Start();
         await process.WaitForExitAsync();
-        progress?.OnCompleted();
+        taskProgress?.NextTask();
 
         #endregion
     }
@@ -1160,7 +1191,6 @@ port = {ExecutorConfiguration.environmentVariables["POSTGRESQL_PORT"]}				# (cha
         Dictionary<ExecutorType, ExecutorControllerBase> executors, object oldExecutorConfiguration,
         ISubject<ProgressInfo>? progress = null)
     {
-        progress?.OnCompleted();
         return Task.CompletedTask;
     }
 }
