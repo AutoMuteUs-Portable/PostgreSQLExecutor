@@ -1060,7 +1060,7 @@ port = {ExecutorConfiguration.environmentVariables["POSTGRESQL_PORT"]}				# (cha
         var postmasterFileContent = await File.ReadAllLinesAsync(Path.Combine(dataDirectory, "postmaster.pid"));
         var pid = int.Parse(postmasterFileContent[0]);
         _process = Process.GetProcessById(pid);
-        IsRunning = true;
+        OnStart();
         _process.Exited += (_, _) => { OnStop(); };
 
         taskProgress?.NextTask();
@@ -1243,12 +1243,6 @@ port = {ExecutorConfiguration.environmentVariables["POSTGRESQL_PORT"]}				# (cha
         ISubject<ProgressInfo>? progress = null)
     {
         return Task.CompletedTask;
-    }
-
-    protected override void OnStop()
-    {
-        base.OnStop();
-        IsRunning = false;
     }
 
     private void ProcessOnOutputDataReceived(object sender, DataReceivedEventArgs e)
