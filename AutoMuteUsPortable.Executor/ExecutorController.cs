@@ -14,6 +14,7 @@ namespace AutoMuteUsPortable.Executor;
 public class ExecutorController : ExecutorControllerBase
 {
     private readonly PocketBaseClientApplication _pocketBaseClientApplication = new();
+    private Process? _process;
 
     public ExecutorController(object executorConfiguration) : base(executorConfiguration)
     {
@@ -1028,9 +1029,15 @@ port = {ExecutorConfiguration.environmentVariables["POSTGRESQL_PORT"]}				# (cha
             name = string.Format("{0}を起動しています", ExecutorConfiguration.type),
             IsIndeterminate = true
         });
-        IsRunning = true;
         startProcess.Start();
         await startProcess.WaitForExitAsync();
+
+        var postmasterFileContent = await File.ReadAllLinesAsync(Path.Combine(dataDirectory, "postmaster.pid"));
+        var pid = int.Parse(postmasterFileContent[0]);
+        _process = Process.GetProcessById(pid);
+        IsRunning = true;
+        _process.Exited += (_, _) => { OnStop(); };
+
         taskProgress?.NextTask();
 
         #endregion
@@ -1062,7 +1069,6 @@ port = {ExecutorConfiguration.environmentVariables["POSTGRESQL_PORT"]}				# (cha
         });
         process.Start();
         process.WaitForExit();
-        IsRunning = false;
         OnStop();
         return Task.CompletedTask;
 
@@ -1194,5 +1200,11 @@ port = {ExecutorConfiguration.environmentVariables["POSTGRESQL_PORT"]}				# (cha
         ISubject<ProgressInfo>? progress = null)
     {
         return Task.CompletedTask;
+    }
+
+    protected override void OnStop()
+    {
+        base.OnStop();
+        IsRunning = false;
     }
 }
