@@ -15,9 +15,18 @@ public class ExecutorController : ExecutorControllerBase
 {
     private readonly PocketBaseClientApplication _pocketBaseClientApplication = new();
     private Process? _process;
+    private readonly StreamWriter _outputStreamWriter;
+    private readonly StreamWriter _errorstreamWriter;
 
     public ExecutorController(object executorConfiguration) : base(executorConfiguration)
     {
+        #region Initialize stream writer
+
+        _outputStreamWriter = new StreamWriter(OutputStream);
+        _errorstreamWriter = new StreamWriter(ErrorStream);
+
+        #endregion
+
         #region Check variables
 
         var binaryDirectory = Utils.PropertyByName<string>(executorConfiguration, "binaryDirectory");
@@ -62,6 +71,13 @@ public class ExecutorController : ExecutorControllerBase
     public ExecutorController(object computedSimpleSettings,
         object executorConfigurationBase) : base(computedSimpleSettings, executorConfigurationBase)
     {
+        #region Initialize stream writer
+
+        _outputStreamWriter = new StreamWriter(OutputStream);
+        _errorstreamWriter = new StreamWriter(ErrorStream);
+
+        #endregion
+
         #region Check variables
 
         var binaryDirectory = Utils.PropertyByName<string>(executorConfigurationBase, "binaryDirectory");
@@ -1019,6 +1035,8 @@ port = {ExecutorConfiguration.environmentVariables["POSTGRESQL_PORT"]}				# (cha
                 Arguments = $"start -w -D \"{dataDirectory.Replace(@"\", @"\\")}\"",
                 UseShellExecute = false,
                 CreateNoWindow = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
                 WorkingDirectory = ExecutorConfiguration.binaryDirectory
             }
         };
@@ -1030,6 +1048,13 @@ port = {ExecutorConfiguration.environmentVariables["POSTGRESQL_PORT"]}				# (cha
             IsIndeterminate = true
         });
         startProcess.Start();
+
+        startProcess.OutputDataReceived += ProcessOnOutputDataReceived;
+        startProcess.BeginOutputReadLine();
+
+        startProcess.ErrorDataReceived += ProcessOnErrorDataReceived;
+        startProcess.BeginErrorReadLine();
+
         await startProcess.WaitForExitAsync();
 
         var postmasterFileContent = await File.ReadAllLinesAsync(Path.Combine(dataDirectory, "postmaster.pid"));
@@ -1058,6 +1083,8 @@ port = {ExecutorConfiguration.environmentVariables["POSTGRESQL_PORT"]}				# (cha
                     $"stop -D \"{Path.Combine(ExecutorConfiguration.binaryDirectory, @"data\").Replace(@"\", @"\\")}\" -m smart",
                 UseShellExecute = false,
                 CreateNoWindow = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
                 WorkingDirectory = ExecutorConfiguration.binaryDirectory
             }
         };
@@ -1068,6 +1095,13 @@ port = {ExecutorConfiguration.environmentVariables["POSTGRESQL_PORT"]}				# (cha
             IsIndeterminate = true
         });
         process.Start();
+
+        process.OutputDataReceived += ProcessOnOutputDataReceived;
+        process.BeginOutputReadLine();
+
+        process.ErrorDataReceived += ProcessOnErrorDataReceived;
+        process.BeginErrorReadLine();
+
         process.WaitForExit();
         OnStop();
         return Task.CompletedTask;
@@ -1185,10 +1219,19 @@ port = {ExecutorConfiguration.environmentVariables["POSTGRESQL_PORT"]}				# (cha
                     $"--auth=password --pwfile=\"{passwordFile}\" --username={ExecutorConfiguration.environmentVariables["POSTGRESQL_USERNAME"]} \"{Path.Combine(ExecutorConfiguration.binaryDirectory, @"data\").Replace(@"\", @"\\")}\"",
                 UseShellExecute = false,
                 CreateNoWindow = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
                 WorkingDirectory = ExecutorConfiguration.binaryDirectory
             }
         };
         process.Start();
+
+        process.OutputDataReceived += ProcessOnOutputDataReceived;
+        process.BeginOutputReadLine();
+
+        process.ErrorDataReceived += ProcessOnErrorDataReceived;
+        process.BeginErrorReadLine();
+
         await process.WaitForExitAsync();
         taskProgress?.NextTask();
 
@@ -1206,5 +1249,15 @@ port = {ExecutorConfiguration.environmentVariables["POSTGRESQL_PORT"]}				# (cha
     {
         base.OnStop();
         IsRunning = false;
+    }
+
+    private void ProcessOnOutputDataReceived(object sender, DataReceivedEventArgs e)
+    {
+        _outputStreamWriter.Write(e.Data);
+    }
+
+    private void ProcessOnErrorDataReceived(object sender, DataReceivedEventArgs e)
+    {
+        _errorstreamWriter.Write(e.Data);
     }
 }
