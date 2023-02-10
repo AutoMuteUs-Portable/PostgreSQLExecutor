@@ -16,14 +16,14 @@ public class ExecutorController : ExecutorControllerBase
     private readonly PocketBaseClientApplication _pocketBaseClientApplication = new();
     private Process? _process;
     private readonly StreamWriter _outputStreamWriter;
-    private readonly StreamWriter _errorstreamWriter;
+    private readonly StreamWriter _errorStreamWriter;
 
     public ExecutorController(object executorConfiguration) : base(executorConfiguration)
     {
         #region Initialize stream writer
 
         _outputStreamWriter = new StreamWriter(OutputStream);
-        _errorstreamWriter = new StreamWriter(ErrorStream);
+        _errorStreamWriter = new StreamWriter(ErrorStream);
 
         #endregion
 
@@ -74,7 +74,7 @@ public class ExecutorController : ExecutorControllerBase
         #region Initialize stream writer
 
         _outputStreamWriter = new StreamWriter(OutputStream);
-        _errorstreamWriter = new StreamWriter(ErrorStream);
+        _errorStreamWriter = new StreamWriter(ErrorStream);
 
         #endregion
 
@@ -1252,6 +1252,6 @@ port = {ExecutorConfiguration.environmentVariables["POSTGRESQL_PORT"]}				# (cha
 
     private void ProcessOnErrorDataReceived(object sender, DataReceivedEventArgs e)
     {
-        _errorstreamWriter.Write(e.Data);
+        _errorStreamWriter.Write(e.Data);
     }
 }
