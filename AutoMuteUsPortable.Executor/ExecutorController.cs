@@ -184,46 +184,60 @@ public class ExecutorController : ExecutorControllerBase
 
         #region Check file integrity
 
-        using (var client = new HttpClient())
+        var checksumUrl = Utils.GetChecksum(postgresql.Checksum);
+
+        if (string.IsNullOrEmpty(checksumUrl))
         {
-            var checksumUrl = Utils.GetChecksum(postgresql.Checksum);
-            var res = await client.GetStringAsync(checksumUrl);
-            var checksum = Utils.ParseChecksumText(res);
-            var checksumProgress = taskProgress?.GetSubjectProgress();
-            checksumProgress?.OnNext(new ProgressInfo
+#if DEBUG
+            // Continue without checksum file
+            // TODO: log out as DEBUG Level
+            taskProgress?.NextTask(3);
+#else
+                throw new InvalidDataException("Checksum cannot be null or empty");
+#endif
+        }
+        else
+        {
+            using (var client = new HttpClient())
             {
-                name = string.Format("{0}のファイルの整合性を確認しています", ExecutorConfiguration.type),
-                IsIndeterminate = true
-            });
-            var invalidFiles = Utils.CompareChecksum(ExecutorConfiguration.binaryDirectory, checksum);
-            taskProgress?.NextTask();
-
-            if (0 < invalidFiles.Count)
-            {
-                var downloadUrl = Utils.GetDownloadUrl(postgresql.DownloadUrl);
-                if (string.IsNullOrEmpty(downloadUrl))
-                    throw new InvalidDataException("DownloadUrl cannot be null or empty");
-
-                var binaryPath = Path.Combine(ExecutorConfiguration.binaryDirectory,
-                    Path.GetFileName(downloadUrl));
-
-                var downloadProgress = taskProgress?.GetProgress();
-                if (taskProgress?.ActiveLeafTask != null)
-                    taskProgress.ActiveLeafTask.Name =
-                        string.Format("{0}の実行に必要なファイルをダウンロードしています", ExecutorConfiguration.type);
-                await Utils.DownloadAsync(downloadUrl, binaryPath, downloadProgress);
+                var res = await client.GetStringAsync(checksumUrl);
+                var checksum = Utils.ParseChecksumText(res);
+                var checksumProgress = taskProgress?.GetSubjectProgress();
+                checksumProgress?.OnNext(new ProgressInfo
+                {
+                    name = string.Format("{0}のファイルの整合性を確認しています", ExecutorConfiguration.type),
+                    IsIndeterminate = true
+                });
+                var invalidFiles = Utils.CompareChecksum(ExecutorConfiguration.binaryDirectory, checksum);
                 taskProgress?.NextTask();
 
-                var extractProgress = taskProgress?.GetProgress();
-                if (taskProgress?.ActiveLeafTask != null)
-                    taskProgress.ActiveLeafTask.Name =
-                        string.Format("{0}の実行に必要なファイルを解凍しています", ExecutorConfiguration.type);
-                Utils.ExtractZip(binaryPath, extractProgress);
-                taskProgress?.NextTask();
-            }
-            else
-            {
-                taskProgress?.NextTask(2);
+                if (0 < invalidFiles.Count)
+                {
+                    var downloadUrl = Utils.GetDownloadUrl(postgresql.DownloadUrl);
+                    if (string.IsNullOrEmpty(downloadUrl))
+                        throw new InvalidDataException("DownloadUrl cannot be null or empty");
+
+                    var binaryPath = Path.Combine(ExecutorConfiguration.binaryDirectory,
+                        Path.GetFileName(downloadUrl));
+
+                    var downloadProgress = taskProgress?.GetProgress();
+                    if (taskProgress?.ActiveLeafTask != null)
+                        taskProgress.ActiveLeafTask.Name =
+                            string.Format("{0}の実行に必要なファイルをダウンロードしています", ExecutorConfiguration.type);
+                    await Utils.DownloadAsync(downloadUrl, binaryPath, downloadProgress);
+                    taskProgress?.NextTask();
+
+                    var extractProgress = taskProgress?.GetProgress();
+                    if (taskProgress?.ActiveLeafTask != null)
+                        taskProgress.ActiveLeafTask.Name =
+                            string.Format("{0}の実行に必要なファイルを解凍しています", ExecutorConfiguration.type);
+                    Utils.ExtractZip(binaryPath, extractProgress);
+                    taskProgress?.NextTask();
+                }
+                else
+                {
+                    taskProgress?.NextTask(2);
+                }
             }
         }
 
@@ -1040,6 +1054,9 @@ port = {ExecutorConfiguration.environmentVariables["POSTGRESQL_PORT"]}				# (cha
                 WorkingDirectory = ExecutorConfiguration.binaryDirectory
             }
         };
+        startProcess.OutputDataReceived += ProcessOnOutputDataReceived;
+        startProcess.ErrorDataReceived += ProcessOnErrorDataReceived;
+        startProcess.EnableRaisingEvents = true;
 
         var startProgress = taskProgress?.GetSubjectProgress();
         startProgress?.OnNext(new ProgressInfo
@@ -1049,10 +1066,7 @@ port = {ExecutorConfiguration.environmentVariables["POSTGRESQL_PORT"]}				# (cha
         });
         startProcess.Start();
 
-        startProcess.OutputDataReceived += ProcessOnOutputDataReceived;
         startProcess.BeginOutputReadLine();
-
-        startProcess.ErrorDataReceived += ProcessOnErrorDataReceived;
         startProcess.BeginErrorReadLine();
 
         await startProcess.WaitForExitAsync();
