@@ -128,9 +128,9 @@ public class ExecutorController : ExecutorControllerBase
             binaryDirectory = binaryDirectory,
             environmentVariables = new Dictionary<string, string>
             {
-                { "POSTGRESQL_PORT", postgresqlPort.ToString() ?? "" },
-                { "POSTGRESQL_USERNAME", postgresqlUsername },
-                { "POSTGRESQL_PASSWORD", postgresqlPassword }
+                ["POSTGRESQL_PORT"] = postgresqlPort.ToString() ?? "",
+                ["POSTGRESQL_USERNAME"] = postgresqlUsername,
+                ["POSTGRESQL_PASSWORD"] = postgresqlPassword
             }
         };
 
@@ -151,22 +151,14 @@ public class ExecutorController : ExecutorControllerBase
         var taskProgress = progress != null
             ? new TaskProgress(progress, new Dictionary<string, object?>
             {
+                ["File integrity check"] = new List<string>
                 {
-                    "File integrity check", new List<string>
-                    {
-                        "Checking file integrity",
-                        "Downloading",
-                        "Extracting"
-                    }
+                    "Checking file integrity",
+                    "Downloading",
+                    "Extracting"
                 },
-                {
-                    "Killing currently running server",
-                    null
-                },
-                {
-                    "Starting server",
-                    null
-                }
+                ["Killing currently running server"] = null,
+                ["Starting server"] = null
             })
             : null;
 
