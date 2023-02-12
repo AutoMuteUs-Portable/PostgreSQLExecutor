@@ -1,5 +1,8 @@
 ﻿using System.Diagnostics;
 using System.Management;
+using System.Reactive.Concurrency;
+using System.Reactive.Disposables;
+using System.Reactive.Linq;
 using System.Reactive.Subjects;
 using AutoMuteUsPortable.PocketBaseClient;
 using AutoMuteUsPortable.Shared.Controller.Executor;
@@ -17,6 +20,7 @@ public class ExecutorController : ExecutorControllerBase
     private Process? _process;
     private readonly StreamWriter _outputStreamWriter;
     private readonly StreamWriter _errorStreamWriter;
+    private IDisposable _healthChecker = Disposable.Empty;
 
     public ExecutorController(object executorConfiguration) : base(executorConfiguration)
     {
@@ -1069,13 +1073,29 @@ port = {ExecutorConfiguration.environmentVariables["POSTGRESQL_PORT"]}				# (cha
         startProcess.BeginOutputReadLine();
         startProcess.BeginErrorReadLine();
 
-        await startProcess.WaitForExitAsync();
-
-        var postmasterFileContent = await File.ReadAllLinesAsync(Path.Combine(dataDirectory, "postmaster.pid"));
-        var pid = int.Parse(postmasterFileContent[0]);
-        _process = Process.GetProcessById(pid);
-        OnStart();
-        _process.Exited += (_, _) => { OnStop(); };
+        _healthChecker = Observable.Interval(TimeSpan.FromSeconds(10)).Timeout(TimeSpan.FromSeconds(5)).Select(_ =>
+            Observable.Start(() =>
+            {
+                var process = new Process
+                {
+                    StartInfo = new ProcessStartInfo
+                    {
+                        FileName = Path.Combine(ExecutorConfiguration.binaryDirectory, @"bin\pg_isready.exe"),
+                        Arguments =
+                            $"-p {ExecutorConfiguration.environmentVariables["POSTGRESQL_PORT"]}",
+                        UseShellExecute = false,
+                        CreateNoWindow = true,
+                        WorkingDirectory = ExecutorConfiguration.binaryDirectory
+                    }
+                };
+                process.Start();
+                process.WaitForExit();
+                return process.ExitCode;
+            }, TaskPoolScheduler.Default)).Concat().Subscribe(exitCode =>
+        {
+            if (exitCode == 0) OnStart();
+            else OnStop();
+        }, _ => OnStop(), () => { });
 
         taskProgress?.NextTask();
 
@@ -1102,7 +1122,11 @@ port = {ExecutorConfiguration.environmentVariables["POSTGRESQL_PORT"]}				# (cha
                 WorkingDirectory = ExecutorConfiguration.binaryDirectory
             }
         };
+        process.OutputDataReceived += ProcessOnOutputDataReceived;
+        process.ErrorDataReceived += ProcessOnErrorDataReceived;
+        process.EnableRaisingEvents = true;
 
+        _healthChecker.Dispose();
         progress?.OnNext(new ProgressInfo
         {
             name = string.Format("{0}を終了しています", ExecutorConfiguration.type),
@@ -1110,13 +1134,11 @@ port = {ExecutorConfiguration.environmentVariables["POSTGRESQL_PORT"]}				# (cha
         });
         process.Start();
 
-        process.OutputDataReceived += ProcessOnOutputDataReceived;
         process.BeginOutputReadLine();
-
-        process.ErrorDataReceived += ProcessOnErrorDataReceived;
         process.BeginErrorReadLine();
 
         process.WaitForExit();
+
         OnStop();
         return Task.CompletedTask;
 
@@ -1267,5 +1289,18 @@ port = {ExecutorConfiguration.environmentVariables["POSTGRESQL_PORT"]}				# (cha
     private void ProcessOnErrorDataReceived(object sender, DataReceivedEventArgs e)
     {
         _errorStreamWriter.Write(e.Data);
+    }
+
+    protected override void OnStart()
+    {
+        if (IsRunning) return;
+        base.OnStart();
+    }
+
+    protected override void OnStop()
+    {
+        if (!IsRunning) return;
+        IsRunning = false;
+        base.OnStop();
     }
 }
