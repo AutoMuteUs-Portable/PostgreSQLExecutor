@@ -10,16 +10,16 @@ using AutoMuteUsPortable.Shared.Entity.ExecutorConfigurationBaseNS;
 using AutoMuteUsPortable.Shared.Entity.ExecutorConfigurationNS;
 using AutoMuteUsPortable.Shared.Entity.ProgressInfo;
 using AutoMuteUsPortable.Shared.Utility;
+using CliWrap;
 using FluentValidation;
 
 namespace AutoMuteUsPortable.Executor;
 
 public class ExecutorController : ExecutorControllerBase
 {
-    private readonly PocketBaseClientApplication _pocketBaseClientApplication = new();
-    private Process? _process;
-    private readonly StreamWriter _outputStreamWriter;
     private readonly StreamWriter _errorStreamWriter;
+    private readonly StreamWriter _outputStreamWriter;
+    private readonly PocketBaseClientApplication _pocketBaseClientApplication = new();
     private IDisposable _healthChecker = Disposable.Empty;
 
     public ExecutorController(object executorConfiguration) : base(executorConfiguration)
@@ -140,6 +140,16 @@ public class ExecutorController : ExecutorControllerBase
         ExecutorConfiguration = executorConfiguration;
 
         #endregion
+    }
+
+    private IDisposable HealthChecker
+    {
+        get => _healthChecker;
+        set
+        {
+            _healthChecker.Dispose();
+            _healthChecker = value;
+        }
     }
 
     public override async Task Run(ISubject<ProgressInfo>? progress = null)
@@ -1037,133 +1047,74 @@ port = {ExecutorConfiguration.environmentVariables["POSTGRESQL_PORT"]}				# (cha
 
         #region Start server
 
-        var startProcess = new Process
-        {
-            StartInfo = new ProcessStartInfo
-            {
-                FileName = Path.Combine(ExecutorConfiguration.binaryDirectory, @"bin\pg_ctl.exe"),
-                Arguments = $"start -w -D \"{dataDirectory.Replace(@"\", @"\\")}\"",
-                UseShellExecute = false,
-                CreateNoWindow = true,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                WorkingDirectory = ExecutorConfiguration.binaryDirectory
-            }
-        };
-        startProcess.OutputDataReceived += ProcessOnOutputDataReceived;
-        startProcess.ErrorDataReceived += ProcessOnErrorDataReceived;
-        startProcess.EnableRaisingEvents = true;
-
         var startProgress = taskProgress?.GetSubjectProgress();
         startProgress?.OnNext(new ProgressInfo
         {
             name = string.Format("{0}を起動しています", ExecutorConfiguration.type),
             IsIndeterminate = true
         });
-        startProcess.Start();
+        Cli.Wrap(Path.Combine(ExecutorConfiguration.binaryDirectory, @"bin\pg_ctl.exe"))
+            .WithArguments($"start -w -D \"{dataDirectory.Replace(@"\", @"\\")}\"")
+            .WithWorkingDirectory(ExecutorConfiguration.binaryDirectory)
+            .WithStandardOutputPipe(PipeTarget.ToDelegate(ProcessStandardOutput))
+            .WithStandardErrorPipe(PipeTarget.ToDelegate(ProcessStandardError))
+            .ExecuteAsync();
 
-        startProcess.BeginOutputReadLine();
-        startProcess.BeginErrorReadLine();
-
-        _healthChecker = Observable.Interval(TimeSpan.FromSeconds(10)).Timeout(TimeSpan.FromSeconds(5)).Select(_ =>
-            Observable.Start(() =>
-            {
-                var process = new Process
-                {
-                    StartInfo = new ProcessStartInfo
-                    {
-                        FileName = Path.Combine(ExecutorConfiguration.binaryDirectory, @"bin\pg_isready.exe"),
-                        Arguments =
-                            $"-p {ExecutorConfiguration.environmentVariables["POSTGRESQL_PORT"]}",
-                        UseShellExecute = false,
-                        CreateNoWindow = true,
-                        WorkingDirectory = ExecutorConfiguration.binaryDirectory
-                    }
-                };
-                process.Start();
-                process.WaitForExit();
-                return process.ExitCode;
-            }, TaskPoolScheduler.Default)).Concat().Subscribe(exitCode =>
-        {
-            if (exitCode == 0) OnStart();
-            else OnStop();
-        }, _ => OnStop(), () => { });
+        CreateHealthChecker();
 
         taskProgress?.NextTask();
 
         #endregion
     }
 
-    public override Task Stop(ISubject<ProgressInfo>? progress = null)
+    public override async Task Stop(ISubject<ProgressInfo>? progress = null)
     {
-        if (!IsRunning) return Task.CompletedTask;
+        if (!IsRunning) return;
 
         #region Stop server in postgresql manner
 
-        var process = new Process
-        {
-            StartInfo = new ProcessStartInfo
-            {
-                FileName = Path.Combine(ExecutorConfiguration.binaryDirectory, @"bin\pg_ctl.exe"),
-                Arguments =
-                    $"stop -D \"{Path.Combine(ExecutorConfiguration.binaryDirectory, @"data\").Replace(@"\", @"\\")}\" -m smart",
-                UseShellExecute = false,
-                CreateNoWindow = true,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                WorkingDirectory = ExecutorConfiguration.binaryDirectory
-            }
-        };
-        process.OutputDataReceived += ProcessOnOutputDataReceived;
-        process.ErrorDataReceived += ProcessOnErrorDataReceived;
-        process.EnableRaisingEvents = true;
-
-        _healthChecker.Dispose();
         progress?.OnNext(new ProgressInfo
         {
             name = string.Format("{0}を終了しています", ExecutorConfiguration.type),
             IsIndeterminate = true
         });
-        process.Start();
 
-        process.BeginOutputReadLine();
-        process.BeginErrorReadLine();
+        HealthChecker.Dispose();
 
-        process.WaitForExit();
+        await Cli.Wrap(Path.Combine(ExecutorConfiguration.binaryDirectory, @"bin\pg_ctl.exe"))
+            .WithArguments(
+                $"stop -D \"{Path.Combine(ExecutorConfiguration.binaryDirectory, @"data\").Replace(@"\", @"\\")}\" -m smart")
+            .WithWorkingDirectory(ExecutorConfiguration.binaryDirectory)
+            .WithStandardOutputPipe(PipeTarget.ToDelegate(ProcessStandardOutput))
+            .WithStandardErrorPipe(PipeTarget.ToDelegate(ProcessStandardError))
+            .ExecuteAsync();
 
         OnStop();
-        return Task.CompletedTask;
 
         #endregion
     }
 
-    public override Task Restart(ISubject<ProgressInfo>? progress = null)
+    public override async Task Restart(ISubject<ProgressInfo>? progress = null)
     {
-        if (!IsRunning) return Task.CompletedTask;
+        if (!IsRunning) return;
 
         #region Restart server in postgresql manner
-
-        var process = new Process
-        {
-            StartInfo = new ProcessStartInfo
-            {
-                FileName = Path.Combine(ExecutorConfiguration.binaryDirectory, @"bin\pg_ctl.exe"),
-                Arguments =
-                    $"restart -w -D \"{Path.Combine(ExecutorConfiguration.binaryDirectory, @"data\").Replace(@"\", @"\\")} -m smart",
-                UseShellExecute = false,
-                CreateNoWindow = true,
-                WorkingDirectory = ExecutorConfiguration.binaryDirectory
-            }
-        };
 
         progress?.OnNext(new ProgressInfo
         {
             name = string.Format("{0}を再起動しています", ExecutorConfiguration.type),
             IsIndeterminate = true
         });
-        process.Start();
-        process.WaitForExit();
-        return Task.CompletedTask;
+
+        Cli.Wrap(Path.Combine(ExecutorConfiguration.binaryDirectory, @"bin\pg_ctl.exe"))
+            .WithArguments(
+                $"restart -w -D \"{Path.Combine(ExecutorConfiguration.binaryDirectory, @"data\").Replace(@"\", @"\\")} -m smart")
+            .WithWorkingDirectory(ExecutorConfiguration.binaryDirectory)
+            .WithStandardOutputPipe(PipeTarget.ToDelegate(ProcessStandardOutput))
+            .WithStandardErrorPipe(PipeTarget.ToDelegate(ProcessStandardError))
+            .ExecuteAsync();
+
+        CreateHealthChecker();
 
         #endregion
     }
@@ -1238,29 +1189,15 @@ port = {ExecutorConfiguration.environmentVariables["POSTGRESQL_PORT"]}				# (cha
             name = "データベースを初期化しています",
             IsIndeterminate = true
         });
-        var process = new Process
-        {
-            StartInfo = new ProcessStartInfo
-            {
-                FileName = Path.Combine(ExecutorConfiguration.binaryDirectory, @"bin\initdb.exe"),
-                Arguments =
-                    $"--auth=password --pwfile=\"{passwordFile}\" --username={ExecutorConfiguration.environmentVariables["POSTGRESQL_USERNAME"]} \"{Path.Combine(ExecutorConfiguration.binaryDirectory, @"data\").Replace(@"\", @"\\")}\"",
-                UseShellExecute = false,
-                CreateNoWindow = true,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                WorkingDirectory = ExecutorConfiguration.binaryDirectory
-            }
-        };
-        process.Start();
 
-        process.OutputDataReceived += ProcessOnOutputDataReceived;
-        process.BeginOutputReadLine();
+        await Cli.Wrap(Path.Combine(ExecutorConfiguration.binaryDirectory, @"bin\initdb.exe"))
+            .WithArguments(
+                $"--auth=password --pwfile=\"{passwordFile}\" --username={ExecutorConfiguration.environmentVariables["POSTGRESQL_USERNAME"]} \"{Path.Combine(ExecutorConfiguration.binaryDirectory, @"data\").Replace(@"\", @"\\")}\"")
+            .WithWorkingDirectory(ExecutorConfiguration.binaryDirectory)
+            .WithStandardOutputPipe(PipeTarget.ToDelegate(ProcessStandardOutput))
+            .WithStandardErrorPipe(PipeTarget.ToDelegate(ProcessStandardError))
+            .ExecuteAsync();
 
-        process.ErrorDataReceived += ProcessOnErrorDataReceived;
-        process.BeginErrorReadLine();
-
-        await process.WaitForExitAsync();
         taskProgress?.NextTask();
 
         #endregion
@@ -1273,14 +1210,31 @@ port = {ExecutorConfiguration.environmentVariables["POSTGRESQL_PORT"]}				# (cha
         return Task.CompletedTask;
     }
 
-    private void ProcessOnOutputDataReceived(object sender, DataReceivedEventArgs e)
+    private void CreateHealthChecker()
     {
-        _outputStreamWriter.Write(e.Data);
+        HealthChecker = Observable.Interval(TimeSpan.FromSeconds(10)).Select(_ =>
+            Observable.FromAsync(async () =>
+            {
+                var result = await Cli.Wrap(Path.Combine(ExecutorConfiguration.binaryDirectory, @"bin\pg_isready.exe"))
+                    .WithArguments($"-p {ExecutorConfiguration.environmentVariables["POSTGRESQL_PORT"]}")
+                    .WithWorkingDirectory(ExecutorConfiguration.binaryDirectory)
+                    .ExecuteAsync();
+                return result.ExitCode;
+            }, TaskPoolScheduler.Default)).Concat().Subscribe(exitCode =>
+        {
+            if (exitCode == 0) OnStart();
+            else OnStop();
+        }, _ => OnStop(), () => { });
     }
 
-    private void ProcessOnErrorDataReceived(object sender, DataReceivedEventArgs e)
+    private void ProcessStandardOutput(string text)
     {
-        _errorStreamWriter.Write(e.Data);
+        _outputStreamWriter.Write(text);
+    }
+
+    private void ProcessStandardError(string text)
+    {
+        _errorStreamWriter.Write(text);
     }
 
     protected override void OnStart()
@@ -1292,7 +1246,6 @@ port = {ExecutorConfiguration.environmentVariables["POSTGRESQL_PORT"]}				# (cha
     protected override void OnStop()
     {
         if (!IsRunning) return;
-        IsRunning = false;
         base.OnStop();
     }
 }
