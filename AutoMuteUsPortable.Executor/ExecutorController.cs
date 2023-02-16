@@ -17,20 +17,11 @@ namespace AutoMuteUsPortable.Executor;
 
 public class ExecutorController : ExecutorControllerBase
 {
-    private readonly StreamWriter _errorStreamWriter;
-    private readonly StreamWriter _outputStreamWriter;
     private readonly PocketBaseClientApplication _pocketBaseClientApplication = new();
     private IDisposable _healthChecker = Disposable.Empty;
 
     public ExecutorController(object executorConfiguration) : base(executorConfiguration)
     {
-        #region Initialize stream writer
-
-        _outputStreamWriter = new StreamWriter(OutputStream);
-        _errorStreamWriter = new StreamWriter(ErrorStream);
-
-        #endregion
-
         #region Check variables
 
         var binaryDirectory = Utils.PropertyByName<string>(executorConfiguration, "binaryDirectory");
@@ -75,13 +66,6 @@ public class ExecutorController : ExecutorControllerBase
     public ExecutorController(object computedSimpleSettings,
         object executorConfigurationBase) : base(computedSimpleSettings, executorConfigurationBase)
     {
-        #region Initialize stream writer
-
-        _outputStreamWriter = new StreamWriter(OutputStream);
-        _errorStreamWriter = new StreamWriter(ErrorStream);
-
-        #endregion
-
         #region Check variables
 
         var binaryDirectory = Utils.PropertyByName<string>(executorConfigurationBase, "binaryDirectory");
@@ -1229,12 +1213,12 @@ port = {ExecutorConfiguration.environmentVariables["POSTGRESQL_PORT"]}				# (cha
 
     private void ProcessStandardOutput(string text)
     {
-        _outputStreamWriter.Write(text);
+        StandardOutput.OnNext(text);
     }
 
     private void ProcessStandardError(string text)
     {
-        _errorStreamWriter.Write(text);
+        StandardError.OnNext(text);
     }
 
     protected override void OnStart()
