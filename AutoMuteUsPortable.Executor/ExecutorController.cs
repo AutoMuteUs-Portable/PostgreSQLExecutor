@@ -136,7 +136,8 @@ public class ExecutorController : ExecutorControllerBase
         }
     }
 
-    public override async Task Run(ISubject<ProgressInfo>? progress = null)
+    public override async Task Run(ISubject<ProgressInfo>? progress = null,
+        CancellationToken cancellationToken = default)
     {
         if (IsRunning) return;
 
@@ -190,7 +191,7 @@ public class ExecutorController : ExecutorControllerBase
         {
             using (var client = new HttpClient())
             {
-                var res = await client.GetStringAsync(checksumUrl);
+                var res = await client.GetStringAsync(checksumUrl, cancellationToken);
                 var checksum = Utils.ParseChecksumText(res);
                 var checksumProgress = taskProgress?.GetSubjectProgress();
                 checksumProgress?.OnNext(new ProgressInfo
@@ -198,7 +199,8 @@ public class ExecutorController : ExecutorControllerBase
                     name = string.Format("{0}のファイルの整合性を確認しています", ExecutorConfiguration.type),
                     IsIndeterminate = true
                 });
-                var invalidFiles = Utils.CompareChecksum(ExecutorConfiguration.binaryDirectory, checksum);
+                var invalidFiles =
+                    Utils.CompareChecksum(ExecutorConfiguration.binaryDirectory, checksum, cancellationToken);
                 taskProgress?.NextTask();
 
                 if (0 < invalidFiles.Count)
@@ -214,14 +216,14 @@ public class ExecutorController : ExecutorControllerBase
                     if (taskProgress?.ActiveLeafTask != null)
                         taskProgress.ActiveLeafTask.Name =
                             string.Format("{0}の実行に必要なファイルをダウンロードしています", ExecutorConfiguration.type);
-                    await Utils.DownloadAsync(downloadUrl, binaryPath, downloadProgress);
+                    await Utils.DownloadAsync(downloadUrl, binaryPath, downloadProgress, cancellationToken);
                     taskProgress?.NextTask();
 
                     var extractProgress = taskProgress?.GetProgress();
                     if (taskProgress?.ActiveLeafTask != null)
                         taskProgress.ActiveLeafTask.Name =
                             string.Format("{0}の実行に必要なファイルを解凍しています", ExecutorConfiguration.type);
-                    Utils.ExtractZip(binaryPath, extractProgress);
+                    Utils.ExtractZip(binaryPath, extractProgress, cancellationToken);
                     taskProgress?.NextTask();
                 }
                 else
@@ -249,6 +251,7 @@ public class ExecutorController : ExecutorControllerBase
         using (var results = searcher.Get())
         {
             foreach (var result in results)
+            {
                 try
                 {
                     var processId = (uint)result["ProcessId"];
@@ -260,6 +263,9 @@ public class ExecutorController : ExecutorControllerBase
                 {
                     // ignored
                 }
+
+                cancellationToken.ThrowIfCancellationRequested();
+            }
         }
 
         taskProgress?.NextTask();
@@ -1025,7 +1031,7 @@ port = {ExecutorConfiguration.environmentVariables["POSTGRESQL_PORT"]}				# (cha
 
 ";
 
-        await File.WriteAllTextAsync(postgresqlConfPath, postgresqlConf);
+        await File.WriteAllTextAsync(postgresqlConfPath, postgresqlConf, cancellationToken);
 
         #endregion
 
@@ -1042,7 +1048,7 @@ port = {ExecutorConfiguration.environmentVariables["POSTGRESQL_PORT"]}				# (cha
             .WithWorkingDirectory(ExecutorConfiguration.binaryDirectory)
             .WithStandardOutputPipe(PipeTarget.ToDelegate(ProcessStandardOutput))
             .WithStandardErrorPipe(PipeTarget.ToDelegate(ProcessStandardError))
-            .ExecuteAsync();
+            .ExecuteAsync(cancellationToken);
 
         CreateHealthChecker();
 
@@ -1051,7 +1057,8 @@ port = {ExecutorConfiguration.environmentVariables["POSTGRESQL_PORT"]}				# (cha
         #endregion
     }
 
-    public override async Task Stop(ISubject<ProgressInfo>? progress = null)
+    public override async Task GracefullyStop(ISubject<ProgressInfo>? progress = null,
+        CancellationToken cancellationToken = default)
     {
         if (!IsRunning) return;
 
@@ -1071,16 +1078,57 @@ port = {ExecutorConfiguration.environmentVariables["POSTGRESQL_PORT"]}				# (cha
             .WithWorkingDirectory(ExecutorConfiguration.binaryDirectory)
             .WithStandardOutputPipe(PipeTarget.ToDelegate(ProcessStandardOutput))
             .WithStandardErrorPipe(PipeTarget.ToDelegate(ProcessStandardError))
-            .ExecuteAsync();
+            .ExecuteAsync(cancellationToken);
 
         OnStop();
 
         #endregion
     }
 
-    public override async Task Restart(ISubject<ProgressInfo>? progress = null)
+    public override Task ForciblyStop(ISubject<ProgressInfo>? progress = null)
     {
-        if (!IsRunning) return;
+        if (!IsRunning) return Task.CompletedTask;
+
+        #region Stop server in postgresql manner
+
+        progress?.OnNext(new ProgressInfo
+        {
+            name = string.Format("{0}を終了しています", ExecutorConfiguration.type),
+            IsIndeterminate = true
+        });
+
+        HealthChecker.Dispose();
+
+        var fileName = Path.Combine(ExecutorConfiguration.binaryDirectory, @"bin\postgres.exe");
+        var wmiQueryString =
+            $"SELECT ProcessId FROM Win32_Process WHERE ExecutablePath = '{fileName.Replace(@"\", @"\\")}'";
+        using (var searcher = new ManagementObjectSearcher(wmiQueryString))
+        using (var results = searcher.Get())
+        {
+            foreach (var result in results)
+                try
+                {
+                    var processId = (uint)result["ProcessId"];
+                    var process = Process.GetProcessById((int)processId);
+
+                    process.Kill();
+                }
+                catch
+                {
+                    // ignored
+                }
+        }
+
+        OnStop();
+
+        return Task.CompletedTask;
+
+        #endregion
+    }
+
+    public override Task Restart(ISubject<ProgressInfo>? progress = null, CancellationToken cancellationToken = default)
+    {
+        if (!IsRunning) return Task.CompletedTask;
 
         #region Restart server in postgresql manner
 
@@ -1096,15 +1144,18 @@ port = {ExecutorConfiguration.environmentVariables["POSTGRESQL_PORT"]}				# (cha
             .WithWorkingDirectory(ExecutorConfiguration.binaryDirectory)
             .WithStandardOutputPipe(PipeTarget.ToDelegate(ProcessStandardOutput))
             .WithStandardErrorPipe(PipeTarget.ToDelegate(ProcessStandardError))
-            .ExecuteAsync();
+            .ExecuteAsync(cancellationToken);
 
         CreateHealthChecker();
+
+        return Task.CompletedTask;
 
         #endregion
     }
 
     public override async Task Install(
-        Dictionary<ExecutorType, ExecutorControllerBase> executors, ISubject<ProgressInfo>? progress = null)
+        Dictionary<ExecutorType, ExecutorControllerBase> executors, ISubject<ProgressInfo>? progress = null,
+        CancellationToken cancellationToken = default)
     {
         #region Setup progress
 
@@ -1147,7 +1198,7 @@ port = {ExecutorConfiguration.environmentVariables["POSTGRESQL_PORT"]}				# (cha
         var downloadProgress = taskProgress?.GetProgress();
         if (taskProgress?.ActiveLeafTask != null)
             taskProgress.ActiveLeafTask.Name = string.Format("{0}の実行に必要なファイルをダウンロードしています", ExecutorConfiguration.type);
-        await Utils.DownloadAsync(downloadUrl, binaryPath, downloadProgress);
+        await Utils.DownloadAsync(downloadUrl, binaryPath, downloadProgress, cancellationToken);
         taskProgress?.NextTask();
 
         #endregion
@@ -1157,7 +1208,7 @@ port = {ExecutorConfiguration.environmentVariables["POSTGRESQL_PORT"]}				# (cha
         var extractProgress = taskProgress?.GetProgress();
         if (taskProgress?.ActiveLeafTask != null)
             taskProgress.ActiveLeafTask.Name = string.Format("{0}の実行に必要なファイルを解凍しています", ExecutorConfiguration.type);
-        Utils.ExtractZip(binaryPath, extractProgress);
+        Utils.ExtractZip(binaryPath, extractProgress, cancellationToken);
         taskProgress?.NextTask();
 
         #endregion
@@ -1165,7 +1216,8 @@ port = {ExecutorConfiguration.environmentVariables["POSTGRESQL_PORT"]}				# (cha
         #region Initialize database
 
         var passwordFile = Path.GetTempFileName();
-        await File.WriteAllTextAsync(passwordFile, ExecutorConfiguration.environmentVariables["POSTGRESQL_PASSWORD"]);
+        await File.WriteAllTextAsync(passwordFile, ExecutorConfiguration.environmentVariables["POSTGRESQL_PASSWORD"],
+            cancellationToken);
 
         var initializeProgress = taskProgress?.GetSubjectProgress();
         initializeProgress?.OnNext(new ProgressInfo
@@ -1180,7 +1232,7 @@ port = {ExecutorConfiguration.environmentVariables["POSTGRESQL_PORT"]}				# (cha
             .WithWorkingDirectory(ExecutorConfiguration.binaryDirectory)
             .WithStandardOutputPipe(PipeTarget.ToDelegate(ProcessStandardOutput))
             .WithStandardErrorPipe(PipeTarget.ToDelegate(ProcessStandardError))
-            .ExecuteAsync();
+            .ExecuteAsync(cancellationToken);
 
         taskProgress?.NextTask();
 
@@ -1189,7 +1241,7 @@ port = {ExecutorConfiguration.environmentVariables["POSTGRESQL_PORT"]}				# (cha
 
     public override Task Update(
         Dictionary<ExecutorType, ExecutorControllerBase> executors, object oldExecutorConfiguration,
-        ISubject<ProgressInfo>? progress = null)
+        ISubject<ProgressInfo>? progress = null, CancellationToken cancellationToken = default)
     {
         return Task.CompletedTask;
     }
