@@ -1043,12 +1043,13 @@ port = {ExecutorConfiguration.environmentVariables["POSTGRESQL_PORT"]}				# (cha
             name = string.Format("{0}を起動しています", ExecutorConfiguration.type),
             IsIndeterminate = true
         });
+        cancellationToken.Register(() => ForciblyStop());
         Cli.Wrap(Path.Combine(ExecutorConfiguration.binaryDirectory, @"bin\pg_ctl.exe"))
             .WithArguments($"start -w -D \"{dataDirectory.Replace(@"\", @"\\")}\"")
             .WithWorkingDirectory(ExecutorConfiguration.binaryDirectory)
             .WithStandardOutputPipe(PipeTarget.ToDelegate(ProcessStandardOutput))
             .WithStandardErrorPipe(PipeTarget.ToDelegate(ProcessStandardError))
-            .ExecuteAsync(cancellationToken);
+            .ExecuteAsync();
 
         CreateHealthChecker();
 
