@@ -514,7 +514,7 @@ public class ExecutorController : ExecutorControllerBase
         {
             if (exitCode == 0 || exitCode == 1) OnStart();
             else OnStop();
-        }, _ => OnStop(), () => { });
+        }, _ => OnStop());
     }
 
     private void ProcessStandardOutput(string text)
