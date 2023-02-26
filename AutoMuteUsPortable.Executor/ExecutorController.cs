@@ -512,7 +512,7 @@ public class ExecutorController : ExecutorControllerBase
                 return result.ExitCode;
             }, TaskPoolScheduler.Default)).Concat().Subscribe(exitCode =>
         {
-            if (exitCode == 0 || exitCode == 1) OnStart();
+            if (exitCode is 0 or 1) OnStart();
             else OnStop();
         }, _ => OnStop());
     }
