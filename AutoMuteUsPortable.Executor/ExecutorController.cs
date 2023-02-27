@@ -325,7 +325,7 @@ public class ExecutorController : ExecutorControllerBase
 
         await Cli.Wrap(Path.Combine(ExecutorConfiguration.binaryDirectory, @"bin\pg_ctl.exe"))
             .WithArguments(
-                $"stop -D \"{Path.Combine(ExecutorConfiguration.binaryDirectory, @"data\").Replace(@"\", @"\\")}\" -m smart")
+                $"stop -D \"{Path.Combine(ExecutorConfiguration.binaryDirectory, @"data\").Replace(@"\", @"\\")}\" -m fast")
             .WithWorkingDirectory(ExecutorConfiguration.binaryDirectory)
             .WithStandardOutputPipe(PipeTarget.ToDelegate(ProcessStandardOutput))
             .WithStandardErrorPipe(PipeTarget.ToDelegate(ProcessStandardError))
@@ -391,7 +391,7 @@ public class ExecutorController : ExecutorControllerBase
 
         Cli.Wrap(Path.Combine(ExecutorConfiguration.binaryDirectory, @"bin\pg_ctl.exe"))
             .WithArguments(
-                $"restart -w -D \"{Path.Combine(ExecutorConfiguration.binaryDirectory, @"data\").Replace(@"\", @"\\")} -m smart")
+                $"restart -w -D \"{Path.Combine(ExecutorConfiguration.binaryDirectory, @"data\").Replace(@"\", @"\\")}\" -m fast")
             .WithWorkingDirectory(ExecutorConfiguration.binaryDirectory)
             .WithStandardOutputPipe(PipeTarget.ToDelegate(ProcessStandardOutput))
             .WithStandardErrorPipe(PipeTarget.ToDelegate(ProcessStandardError))
