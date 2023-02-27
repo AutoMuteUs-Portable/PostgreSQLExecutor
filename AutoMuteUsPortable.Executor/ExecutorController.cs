@@ -389,13 +389,14 @@ public class ExecutorController : ExecutorControllerBase
             IsIndeterminate = true
         });
 
+        cancellationToken.Register(() => ForciblyStop());
         Cli.Wrap(Path.Combine(ExecutorConfiguration.binaryDirectory, @"bin\pg_ctl.exe"))
             .WithArguments(
                 $"restart -w -D \"{Path.Combine(ExecutorConfiguration.binaryDirectory, @"data\").Replace(@"\", @"\\")}\" -m fast")
             .WithWorkingDirectory(ExecutorConfiguration.binaryDirectory)
             .WithStandardOutputPipe(PipeTarget.ToDelegate(ProcessStandardOutput))
             .WithStandardErrorPipe(PipeTarget.ToDelegate(ProcessStandardError))
-            .ExecuteAsync(cancellationToken);
+            .ExecuteAsync();
 
         CreateHealthChecker();
 
