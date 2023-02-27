@@ -503,19 +503,27 @@ public class ExecutorController : ExecutorControllerBase
 
     private void CreateHealthChecker()
     {
-        HealthChecker = Observable.Interval(TimeSpan.FromSeconds(10)).StartWith(-1).Select(_ =>
+        HealthChecker = Observable.Timer(TimeSpan.Zero, TimeSpan.FromSeconds(10)).Select(_ =>
             Observable.FromAsync(async () =>
             {
-                var result = await Cli.Wrap(Path.Combine(ExecutorConfiguration.binaryDirectory, @"bin\pg_isready.exe"))
+                Debug.WriteLine("Checking health...");
+                var result = await Cli
+                    .Wrap(Path.Combine(ExecutorConfiguration.binaryDirectory, @"bin\pg_isready.exe"))
                     .WithArguments($"-p {ExecutorConfiguration.environmentVariables["POSTGRESQL_PORT"]}")
                     .WithWorkingDirectory(ExecutorConfiguration.binaryDirectory)
+                    .WithValidation(CommandResultValidation.None)
                     .ExecuteAsync();
                 return result.ExitCode;
-            }, TaskPoolScheduler.Default)).Concat().Subscribe(exitCode =>
-        {
-            if (exitCode is 0 or 1) OnStart();
-            else OnStop();
-        }, _ => OnStop());
+            }, TaskPoolScheduler.Default).Catch<int, Exception>(ex =>
+            {
+                // TODO: log unexpected exception
+                return Observable.Empty<int>();
+            })).Concat().Subscribe(
+            exitCode =>
+            {
+                if (exitCode is 0 or 1) OnStart();
+                else OnStop();
+            }, _ => OnStop());
     }
 
     private void ProcessStandardOutput(string text)
