@@ -502,7 +502,7 @@ public class ExecutorController : ExecutorControllerBase
 
     private void CreateHealthChecker()
     {
-        HealthChecker = Observable.Timer(TimeSpan.Zero, TimeSpan.FromSeconds(10)).Select(_ =>
+        HealthChecker = Observable.Interval(TimeSpan.FromSeconds(10)).StartWith(-1).Select(_ =>
             Observable.FromAsync(async () =>
             {
                 var result = await Cli.Wrap(Path.Combine(ExecutorConfiguration.binaryDirectory, @"bin\pg_isready.exe"))
