@@ -12,6 +12,7 @@ using AutoMuteUsPortable.Shared.Entity.ProgressInfo;
 using AutoMuteUsPortable.Shared.Utility;
 using CliWrap;
 using FluentValidation;
+using Serilog;
 
 namespace AutoMuteUsPortable.Executor;
 
@@ -59,6 +60,8 @@ public class ExecutorController : ExecutorControllerBase
         validator.ValidateAndThrow(tmp);
 
         ExecutorConfiguration = tmp;
+
+        Log.Debug("ExecutorController is instantiated with {@ExecutorConfiguration}", ExecutorConfiguration);
 
         #endregion
     }
@@ -123,6 +126,8 @@ public class ExecutorController : ExecutorControllerBase
 
         ExecutorConfiguration = executorConfiguration;
 
+        Log.Debug("ExecutorController is instantiated with {@ExecutorConfiguration}", ExecutorConfiguration);
+
         #endregion
     }
 
@@ -180,8 +185,7 @@ public class ExecutorController : ExecutorControllerBase
         if (string.IsNullOrEmpty(checksumUrl))
         {
 #if DEBUG
-            // Continue without checksum file
-            // TODO: log out as DEBUG Level
+            Log.Debug("Checksum is null or empty, skipping integrity check");
             taskProgress?.NextTask(3);
 #else
                 throw new InvalidDataException("Checksum cannot be null or empty");
@@ -254,6 +258,7 @@ public class ExecutorController : ExecutorControllerBase
             {
                 try
                 {
+                    Log.Debug("Killing already running process {ProcessId}", result["ProcessId"]);
                     var processId = (uint)result["ProcessId"];
                     var process = Process.GetProcessById((int)processId);
 
@@ -313,6 +318,8 @@ public class ExecutorController : ExecutorControllerBase
     {
         if (!IsRunning) return;
 
+        Log.Debug("Gracefully stopping {Type}", ExecutorConfiguration.type);
+
         #region Stop server in postgresql manner
 
         progress?.OnNext(new ProgressInfo
@@ -339,6 +346,8 @@ public class ExecutorController : ExecutorControllerBase
     public override Task ForciblyStop(ISubject<ProgressInfo>? progress = null)
     {
         if (!IsRunning) return Task.CompletedTask;
+
+        Log.Debug("Forcibly stopping {Type}", ExecutorConfiguration.type);
 
         #region Stop server in postgresql manner
 
@@ -506,7 +515,6 @@ public class ExecutorController : ExecutorControllerBase
         HealthChecker = Observable.Timer(TimeSpan.Zero, TimeSpan.FromSeconds(10)).Select(_ =>
             Observable.FromAsync(async () =>
             {
-                Debug.WriteLine("Checking health...");
                 var result = await Cli
                     .Wrap(Path.Combine(ExecutorConfiguration.binaryDirectory, @"bin\pg_isready.exe"))
                     .WithArguments($"-p {ExecutorConfiguration.environmentVariables["POSTGRESQL_PORT"]}")
@@ -516,7 +524,7 @@ public class ExecutorController : ExecutorControllerBase
                 return result.ExitCode;
             }, TaskPoolScheduler.Default).Catch<int, Exception>(ex =>
             {
-                // TODO: log unexpected exception
+                Log.Warning("Unexpected error happened while health checking PostgreSQL: {Message}", ex.Message);
                 return Observable.Empty<int>();
             })).Concat().Subscribe(
             exitCode =>
@@ -528,11 +536,15 @@ public class ExecutorController : ExecutorControllerBase
 
     private void ProcessStandardOutput(string text)
     {
+        Log.Verbose("[{ExecutorType}] {Text}", ExecutorConfiguration.type, text);
+
         StandardOutput.OnNext(text);
     }
 
     private void ProcessStandardError(string text)
     {
+        Log.Verbose("[{ExecutorType}] {Text}", ExecutorConfiguration.type, text);
+
         StandardError.OnNext(text);
     }
 
