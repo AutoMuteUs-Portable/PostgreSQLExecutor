@@ -304,6 +304,7 @@ public class ExecutorController : ExecutorControllerBase
             .WithWorkingDirectory(ExecutorConfiguration.binaryDirectory)
             .WithStandardOutputPipe(PipeTarget.ToDelegate(ProcessStandardOutput))
             .WithStandardErrorPipe(PipeTarget.ToDelegate(ProcessStandardError))
+            .WithValidation(CommandResultValidation.None)
             .ExecuteAsync();
 
         CreateHealthChecker();
@@ -336,6 +337,7 @@ public class ExecutorController : ExecutorControllerBase
             .WithWorkingDirectory(ExecutorConfiguration.binaryDirectory)
             .WithStandardOutputPipe(PipeTarget.ToDelegate(ProcessStandardOutput))
             .WithStandardErrorPipe(PipeTarget.ToDelegate(ProcessStandardError))
+            .WithValidation(CommandResultValidation.None)
             .ExecuteAsync(cancellationToken);
 
         OnStop();
@@ -405,6 +407,7 @@ public class ExecutorController : ExecutorControllerBase
             .WithWorkingDirectory(ExecutorConfiguration.binaryDirectory)
             .WithStandardOutputPipe(PipeTarget.ToDelegate(ProcessStandardOutput))
             .WithStandardErrorPipe(PipeTarget.ToDelegate(ProcessStandardError))
+            .WithValidation(CommandResultValidation.None)
             .ExecuteAsync();
 
         CreateHealthChecker();
@@ -493,6 +496,7 @@ public class ExecutorController : ExecutorControllerBase
             .WithWorkingDirectory(ExecutorConfiguration.binaryDirectory)
             .WithStandardOutputPipe(PipeTarget.ToDelegate(ProcessStandardOutput))
             .WithStandardErrorPipe(PipeTarget.ToDelegate(ProcessStandardError))
+            .WithValidation(CommandResultValidation.None)
             .ExecuteAsync(cancellationToken);
 
         File.Move(Path.Combine(ExecutorConfiguration.binaryDirectory, @"data\postgresql.conf"),
